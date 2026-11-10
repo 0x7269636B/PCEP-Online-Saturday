@@ -11,3 +11,5 @@
 @media(max-width:650px){.python-panel{padding:16px;margin:20px 0}.python-panel-head{align-items:flex-start;flex-direction:column;gap:4px}.python-panel-head h3{font-size:19px}.editor-shell{height:300px}.python-toolbar .button{flex:1;white-space:normal}.python-panel .python-editor,.python-panel .code-colors,.python-panel .line-numbers{font-size:14px}.field-title input{font-size:16px}.lab .python-panel{padding:12px;margin-left:-6px;margin-right:-6px}}
 @media(forced-colors:active){.python-panel .python-editor{color:CanvasText;-webkit-text-fill-color:CanvasText}.code-colors{visibility:hidden}}
 @media print{.python-panel,.run-example{display:none!important}}
+
+.program-name-help{display:block;font-size:11px;line-height:1.7;font-weight:400;color:var(--muted);margin:-5px 0 14px}

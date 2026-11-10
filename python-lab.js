@@ -8,6 +8,16 @@ window.PythonLab = (() => {
   let db, durable = true, queue = Promise.resolve(), activeRun = null;
   let mounts = [], renderToken = 0;
   const welcome = '# Γράψε το πρώτο σου πρόγραμμα εδώ.\nprint("Γεια σου, Python!")\n';
+  const keywords = new Set('False None True and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield'.split(' '));
+  function programName(value, fallback='my_program') {
+    const original=String(value||'').replace(/\.py$/i,'');
+    let name=original.replace(/[^A-Za-z0-9_]+/g,'_').slice(0,100);
+    if(!name || (/^_+$/.test(name) && name!==original))name=fallback;
+    if(/^[0-9]/.test(name))name='_'+name.slice(0,99);
+    if(keywords.has(name))name+='_';
+    return name;
+  }
+  const defaultName = id => id.startsWith('draft:lab/')?'lab_'+id.slice(10).replace(/[^A-Za-z0-9_]/g,'_'):id.startsWith('example:')?'lesson_example':'my_program';
   const uid = () => crypto.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2);
   const valid = r => r && typeof r.id === 'string' && /^(draft:|program:|example:)/.test(r.id) && typeof r.code === 'string' && r.code.length <= MAX_CODE && typeof r.name === 'string' && r.name.length <= 100 && typeof r.stdin === 'string' && r.stdin.length <= MAX_CODE;
   const readJournal = () => {try {const value=JSON.parse(localStorage.getItem(JOURNAL) || '{}');return value&&typeof value==='object'&&!Array.isArray(value)?value:{};} catch {return {};}};
@@ -33,6 +43,11 @@ window.PythonLab = (() => {
   }).then(async()=>{
     const pending=Object.values(readJournal()).filter(valid);
     for(const r of pending){const old=records.get(r.id);if(!old||old.updated<=r.updated){records.set(r.id,r);await persist(r);}}
+    // Keep existing programs and IDs; update only names that need the ASCII convention.
+    for(const r of records.values()){
+      const name=programName(r.name,defaultName(r.id));
+      if(name!==r.name){const updated={...r,name,revision:uid()};journal(updated);await persist(updated);}
+    }
   });
   function persist(record) {
     records.set(record.id,record);
@@ -50,16 +65,16 @@ window.PythonLab = (() => {
     node.textContent=ok?'Αποθηκεύτηκε σε αυτόν τον browser.':'Η αποθήκευση δεν είναι διαθέσιμη. Κατέβασε το .py πριν κλείσεις.';
     node.classList.toggle('save-warning',!ok);
   }
-  function makeRecord(id,name,code=welcome,stdin='',starter=code) {return {id,name,code,stdin,starter,revision:uid(),updated:new Date().toISOString()};}
+  function makeRecord(id,name,code=welcome,stdin='',starter=code) {return {id,name:programName(name,defaultName(id)),code,stdin,starter,revision:uid(),updated:new Date().toISOString()};}
   function renderPanel(id, name, starter=welcome) {
-    return `<section class="python-panel" data-python-id="${esc(id)}" data-name="${esc(name)}" data-starter="${esc(starter)}" aria-label="Εργαστήριο Python"><div class="python-panel-head"><div><span class="eyebrow">PYTHON LAB</span><h3>${esc(name)}</h3></div><span class="runtime-badge">Python 3 · δωρεάν</span></div><p class="python-help">Γράψε, δοκίμασε και κράτησε τη δουλειά σου. Κάθε εκτέλεση ξεκινά από καθαρό περιβάλλον.</p><div class="python-layout"><div class="python-editor-column"><label class="field-title">Όνομα προγράμματος<input class="program-name" maxlength="100" value="${esc(name)}" autocomplete="off"></label><div class="editor-shell"><pre class="line-numbers" aria-hidden="true">1</pre><div class="editor-layer"><pre class="code-colors" aria-hidden="true"><code></code></pre><textarea class="python-editor" aria-label="Κώδικας Python" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off" maxlength="${MAX_CODE}"></textarea></div></div><p class="keyboard-help">Tab: 4 κενά · Ctrl/⌘ + Enter: εκτέλεση · Esc και Tab: έξοδος από τον editor</p><div class="python-toolbar"><button class="button primary run-python" disabled>▶ Εκτέλεση</button><button class="button stop-python" disabled>■ Διακοπή</button><button class="button save-program" disabled>Αποθήκευση προγράμματος</button><button class="button download-python" disabled>↓ Λήψη .py</button></div><div class="python-secondary"><label class="file-import">↑ Άνοιγμα .py<input type="file" accept=".py,text/x-python,text/plain" class="import-python" disabled></label><button class="text-button restore-python" disabled>Αρχικό παράδειγμα</button></div><div class="restore-confirm hidden"><p>Να αντικατασταθεί ο κώδικας; Κατέβασε πρώτα το .py αν θέλεις να κρατήσεις αντίγραφο.</p><button class="button cancel-restore">Ακύρωση</button> <button class="button confirm-restore">Επαναφορά</button></div><p class="python-save-status" role="status">Άνοιγμα του πρόχειρου…</p></div><div class="python-console-column"><label class="field-title">Δεδομένα εισόδου — input()<textarea class="python-stdin" rows="4" maxlength="${MAX_CODE}" placeholder="Μία απάντηση ανά γραμμή, πριν πατήσεις Εκτέλεση.\nπ.χ. Μαρία\n14"></textarea></label><p class="python-input-help">Κάθε input() διαβάζει την επόμενη γραμμή. Για μία κενή απάντηση, βάλε μια κενή γραμμή. Σε αυτή την έκδοση οι απαντήσεις δίνονται πριν τρέξει το πρόγραμμα.</p><div class="console-heading"><strong>Αποτελέσματα</strong><button class="text-button clear-output">Καθαρισμός</button></div><pre class="python-output" tabindex="0" aria-label="Αποτελέσματα Python"></pre><p class="python-run-status" role="status">Έτοιμο για δοκιμή. Η πρώτη φόρτωση της Python χρειάζεται σύνδεση και λίγο χρόνο.</p></div></div><p class="python-privacy">Η δουλειά σου αποθηκεύεται εδώ, σε αυτόν τον browser. Για άλλον υπολογιστή ή αντίγραφο ασφαλείας, κατέβασε το .py. <a href="#programs">Τα προγράμματά μου →</a></p></section>`;
+    return `<section class="python-panel" data-python-id="${esc(id)}" data-name="${esc(name)}" data-starter="${esc(starter)}" aria-label="Εργαστήριο Python"><div class="python-panel-head"><div><span class="eyebrow">PYTHON LAB</span><h3>${esc(name)}</h3></div><span class="runtime-badge">Python 3 · δωρεάν</span></div><p class="python-help">Γράψε, δοκίμασε και κράτησε τη δουλειά σου. Κάθε εκτέλεση ξεκινά από καθαρό περιβάλλον.</p><div class="python-layout"><div class="python-editor-column"><label class="field-title">Όνομα προγράμματος<input class="program-name" maxlength="100" value="${esc(programName(name,defaultName(id)))}" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="name-help-${esc(id)}" pattern="[A-Za-z_][A-Za-z0-9_]*" title="Λατινικά γράμματα, αριθμοί και _. Πρώτος χαρακτήρας: γράμμα ή _."></label><p class="program-name-help" id="name-help-${esc(id)}">Λατινικά γράμματα, αριθμοί και _. Ξεκίνα με γράμμα ή _. Παράδειγμα: my_program_1. Τα μη έγκυρα ονόματα προσαρμόζονται αυτόματα.</p><div class="editor-shell"><pre class="line-numbers" aria-hidden="true">1</pre><div class="editor-layer"><pre class="code-colors" aria-hidden="true"><code></code></pre><textarea class="python-editor" aria-label="Κώδικας Python" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off" maxlength="${MAX_CODE}"></textarea></div></div><p class="keyboard-help">Tab: 4 κενά · Ctrl/⌘ + Enter: εκτέλεση · Esc και Tab: έξοδος από τον editor</p><div class="python-toolbar"><button class="button primary run-python" disabled>▶ Εκτέλεση</button><button class="button stop-python" disabled>■ Διακοπή</button><button class="button save-program" disabled>Αποθήκευση προγράμματος</button><button class="button download-python" disabled>↓ Λήψη .py</button></div><div class="python-secondary"><label class="file-import">↑ Άνοιγμα .py<input type="file" accept=".py,text/x-python,text/plain" class="import-python" disabled></label><button class="text-button restore-python" disabled>Αρχικό παράδειγμα</button></div><div class="restore-confirm hidden"><p>Να αντικατασταθεί ο κώδικας; Κατέβασε πρώτα το .py αν θέλεις να κρατήσεις αντίγραφο.</p><button class="button cancel-restore">Ακύρωση</button> <button class="button confirm-restore">Επαναφορά</button></div><p class="python-save-status" role="status">Άνοιγμα του πρόχειρου…</p></div><div class="python-console-column"><label class="field-title">Δεδομένα εισόδου — input()<textarea class="python-stdin" rows="4" maxlength="${MAX_CODE}" placeholder="Μία απάντηση ανά γραμμή, πριν πατήσεις Εκτέλεση.\nπ.χ. Μαρία\n14"></textarea></label><p class="python-input-help">Κάθε input() διαβάζει την επόμενη γραμμή. Για μία κενή απάντηση, βάλε μια κενή γραμμή. Σε αυτή την έκδοση οι απαντήσεις δίνονται πριν τρέξει το πρόγραμμα.</p><div class="console-heading"><strong>Αποτελέσματα</strong><button class="text-button clear-output">Καθαρισμός</button></div><pre class="python-output" tabindex="0" aria-label="Αποτελέσματα Python"></pre><p class="python-run-status" role="status">Έτοιμο για δοκιμή. Η πρώτη φόρτωση της Python χρειάζεται σύνδεση και λίγο χρόνο.</p></div></div><p class="python-privacy">Η δουλειά σου αποθηκεύεται εδώ, σε αυτόν τον browser. Για άλλον υπολογιστή ή αντίγραφο ασφαλείας, κατέβασε το .py. <a href="#programs">Τα προγράμματά μου →</a></p></section>`;
   }
   function page(id='draft:free') {
-    return `<div class="content"><div class="page-heading"><div class="eyebrow">ΧΩΡΟΣ ΓΙΑ ΠΕΙΡΑΜΑΤΙΣΜΟ</div><h1>Γράψε Python.</h1><p>Ξεκίνα με μια ιδέα ή άνοιξε ένα παράδειγμα από το μάθημα. Κάνε αλλαγές και δες τι συμβαίνει.</p></div>${renderPanel(id,'Το πρόγραμμά μου')}</div>`;
+    return `<div class="content"><div class="page-heading"><div class="eyebrow">ΧΩΡΟΣ ΓΙΑ ΠΕΙΡΑΜΑΤΙΣΜΟ</div><h1>Γράψε Python.</h1><p>Ξεκίνα με μια ιδέα ή άνοιξε ένα παράδειγμα από το μάθημα. Κάνε αλλαγές και δες τι συμβαίνει.</p></div>${renderPanel(id,'my_program')}</div>`;
   }
   function library(){return `<div class="content"><div class="page-heading"><div class="eyebrow">ΤΟ ΤΕΤΡΑΔΙΟ ΣΟΥ</div><h1>Τα προγράμματά μου.</h1><p>Εδώ βρίσκεις τα αποθηκευμένα προγράμματα και τα πρόχειρα των ασκήσεών σου, στον browser που χρησιμοποιείς τώρα.</p><button class="button primary" id="new-program">Νέο πρόγραμμα +</button></div><div id="program-list" aria-live="polite">Φόρτωση…</div></div>`;}
   function download(record) {
-    const base=(record.name||'program').replace(/[<>:"/\\|?*\u0000-\u001f]/g,'_').replace(/\.py$/i,'').slice(0,80)||'program';
+    const base=programName(record.name,defaultName(record.id));
     const url=URL.createObjectURL(new Blob([record.code],{type:'text/x-python;charset=utf-8'}));
     const a=document.createElement('a');a.href=url;a.download=base+'.py';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
@@ -115,6 +130,10 @@ window.PythonLab = (() => {
     const flush=async()=>{clearTimeout(timer);const r=snapshot(),n=revision;records.set(id,r);let ok=await persist(r);if(labDraft&&labDraft!==id)ok=(await persist({...r,id:labDraft}))&&ok;if(panel.isConnected&&n===revision)persistMessage(status,ok);return r;};
     const changed=()=>{revision++;paint();const r=snapshot();records.set(id,r);let backed=journal(r);if(labDraft&&labDraft!==id){const draft={...r,id:labDraft};records.set(labDraft,draft);backed=journal(draft)&&backed;}status.textContent=backed?'Αποθήκευση…':'Η αυτόματη αποθήκευση μπορεί να μην είναι διαθέσιμη. Κράτησε και ένα .py.';clearTimeout(timer);timer=setTimeout(flush,350);};
     editor.addEventListener('input',changed);stdin.addEventListener('input',changed);name.addEventListener('input',changed);
+    name.addEventListener('blur',()=>{
+      const normalized=programName(name.value,defaultName(id));
+      if(normalized!==name.value){name.value=normalized;changed();toast('Το όνομα προσαρμόστηκε: '+normalized);}
+    });
     editor.addEventListener('scroll',paint);
     editor.addEventListener('keydown',e=>{
       if(e.key==='Escape'){escapeTab=true;return;}
@@ -165,7 +184,7 @@ window.PythonLab = (() => {
   function bind(){
     const token=++renderToken;document.querySelectorAll('.python-panel').forEach(p=>mount(p,token));mountLibrary(token);
     $('#new-program')?.addEventListener('click',async()=>{
-      await ready;const record=makeRecord('program:'+uid(),'Νέο πρόγραμμα');journal(record);await persist(record);
+      await ready;const record=makeRecord('program:'+uid(),'new_program');journal(record);await persist(record);
       location.hash='python/'+encodeURIComponent(record.id);
     });
   }
@@ -175,7 +194,7 @@ window.PythonLab = (() => {
     // Stable key based on the full code: revisiting an example restores its draft.
     const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(code));
     const id='example:'+Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');
-    if(!records.has(id)){const r=makeRecord(id,'Παράδειγμα μαθήματος',code);journal(r);await persist(r);}
+    if(!records.has(id)){const r=makeRecord(id,'lesson_example',code);journal(r);await persist(r);}
     location.hash='python/'+encodeURIComponent(id);
   }
   window.addEventListener('pagehide',()=>{for(const m of mounts)m.flush();});
